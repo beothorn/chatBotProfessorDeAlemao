@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot professor de alemão</title>
+    <style>
+        * {
+            padding: 0;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<p id="enterKey">
+    <a href="https://beta.openai.com/">Open Ai Key:</a>
+    <input id="openAiKeyInput" type="text"/>
+    <button id="setOpenAiKey">OK</button>
+</p>
+
+<div id="content" style="display: none;">
+    <div id="dialogBox">
+    </div>
+    <textarea id="message"></textarea>
+    <button id="sendMessage">Enviar</button>
+    <button id="askSugestion">Responda por mim</button>
+</div>
+
+<script>
+
+const openAiKeyInput = document.getElementById("openAiKeyInput");
+const setOpenAiKey = document.getElementById("setOpenAiKey");
+const enterKey = document.getElementById("enterKey");
+const content = document.getElementById("content");
+
+let openAiKey = window.localStorage.getItem('openAiKey');
+openAiKeyInput.value = openAiKey;
+
+setOpenAiKey.addEventListener("click", async (e) => {
+    openAiKey = openAiKeyInput.value;
+    window.localStorage.setItem('openAiKey', openAiKey);
+    enterKey.style.display = 'none';
+    content.style.display = 'block';
+});
+
+const MAX_DIALOG_SIZE = 20;
+
+const renderDialog = (dialog) =>  dialog
+    .slice(-MAX_DIALOG_SIZE)
+    .map(d => d.author + ': '+ d.msg)
+    .join('\n');
+
+const renderDialogElementsIn = (dialog, dialogBox) => {
+    dialogBox.innerHTML = dialog.map(d => `<p><strong>${d.author}: ${d.msg}</p>`).join('\n');
+}
+
+let dialog = [
+    {
+        author: "Lehrer",
+        msg : "Hallo, willkommen zu unserem Gespräch auf Deutsch. (Olá, bem vindo a nossa conversa em alemão.)"
+    },
+    {
+        author: "Lehrer",
+        msg : "Reden wir nur auf Deutsch, ok? (Vamos conversar somente em alemão, ok?)"
+    },
+    {
+        author: "Lehrer",
+        msg : "Das heutige Thema ist Musik. (O assunto de hoje é música.)"
+    },
+    {
+        author: "Lehrer",
+        msg : "Hallo, wie geht's? (Olá, como vai você?)"
+    }
+];
+
+const intro = `Esse é um diálogo em alemão. O professor está conversando com o aluno e corrigindo sua gramática. 
+O professor é atencioso, educado e criativo.
+
+Este é o diálogo:`;
+
+const checkCorrectSentencePrompt = (previousDialog, sentence) => `${intro}
+
+${previousDialog}
+Schüler: A sentença "${sentence}" está correta, sim ou não?
+Lehrer:`;
+
+const fetchCompletion = (prompt) => fetch(
+    "https://api.openai.com/v1/completions",
+    {
+        "method": "POST",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${openAiKey}`
+        },
+        "body": JSON.stringify({
+            "model": "text-davinci-002",
+            "prompt": prompt,
+            "temperature": 0.9,
+            "max_tokens": 256,
+            "top_p": 1,
+            "frequency_penalty": 0,
+            "presence_penalty": 0,
+            "stop": ["Schüler:", "Lehrer:" ]
+        })
+    }
+).then(r => r.json()).then(a => a.choices[0].text);
+
+const runQuestion = (prompt) => fetch(
+    "https://api.openai.com/v1/completions",
+    {
+        "method": "POST",
+        "headers": {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${openAiKey}`
+        },
+        "body": JSON.stringify({
+            "model": "text-davinci-002",
+            "prompt": prompt,
+            "temperature": 0.5,
+            "max_tokens": 4,
+            "top_p": 1,
+            "frequency_penalty": 0,
+            "presence_penalty": 0
+        })
+    }
+).then(r => r.json()).then( a => a.choices[0].text.toLowerCase().includes('sim') || a.choices[0].text.toLowerCase().includes('ja') );
+
+
+const fetchCheckCorrectSentencePrompt = (previousDialog, sentence) => runQuestion(
+    checkCorrectSentencePrompt(previousDialog, sentence)
+)
+
+const getSentenceCorrectionPrompt = (previousDialog, sentence) => `${intro}
+
+${previousDialog}
+Lehrer: "${sentence}" está incorreto, o correto é "`;
+
+const fetchCorrectSentence = (previousDialog, sentence) => fetchCompletion(
+    getSentenceCorrectionPrompt(previousDialog, sentence)
+)
+
+const getChatEntryAnswerPrompt = (previousDialog) => `${intro}
+
+${previousDialog}
+Lehrer antwort:`;
+
+const fetchNextChatAnswerEntry = (previousDialog) => fetchCompletion(
+    getChatEntryAnswerPrompt(previousDialog)
+)
+
+const getNextChatQuestionEntryPrompt = (previousDialog) => `${intro}
+
+${previousDialog}
+Lehrer: Lassen Sie uns das Gespräch fortsetzen. (Vamos continuar a conversa.).
+Lehrer:`;
+
+const fetchNextChatQuestionEntry = (previousDialog) => fetchCompletion(
+    getNextChatQuestionEntryPrompt(previousDialog)
+)
+
+const getNextChatQuestionEntryWithoutRepeatPrompt = (previousDialog) => `${intro}
+
+${previousDialog}
+Lehrer: Lass uns das Thema wechseln. (Vamos mudar de assunto.).
+Lehrer:`;
+
+const fetchNextChatQuestionEntryWithoutRepeat = (previousDialog) => fetchCompletion(
+    getNextChatQuestionEntryWithoutRepeatPrompt(previousDialog)
+)
+
+const dialogBox = document.getElementById("dialogBox");
+
+
+const sendMessageButton = document.getElementById("sendMessage");
+const messageTextArea = document.getElementById("message");
+
+sendMessageButton.addEventListener("click", async (e) => {
+    messageTextArea.style.display = 'none';
+    sendMessageButton.disabled = true;
+    const currentMessage = messageTextArea.value;
+    dialog.push({
+        author: "Schüler",
+        msg : currentMessage
+    });
+    renderDialogElementsIn(dialog, dialogBox);
+
+    const sentenceIsCorrect = await fetchCheckCorrectSentencePrompt(
+        renderDialog(dialog), 
+        currentMessage
+    );
+    if(!sentenceIsCorrect){
+        const correction = await fetchCorrectSentence(
+            renderDialog(dialog), 
+            currentMessage
+        );
+        dialog.push({
+            author: "Lehrer",
+            msg : `"${currentMessage}" está incorreto, o correto é "${correction}`
+        });
+    }
+
+    const next = await fetchNextChatAnswerEntry(
+        renderDialog(dialog)
+    )
+
+    if(next.trim() !== ''){
+        dialog.push({
+            author: "Lehrer",
+            msg : next
+        });
+    }
+
+    let question = await fetchNextChatQuestionEntry(
+        renderDialog(dialog)
+    )
+    const repeated = dialog.filter(d => d.author === "Lehrer").some(d => d.msg.trim().toLocaleLowerCase() == question.trim().toLocaleLowerCase());
+    if(repeated){
+        console.log('Repetida');
+        question = await fetchNextChatQuestionEntryWithoutRepeat(
+            renderDialog(dialog)
+        )
+    }
+    dialog.push({
+        author: "Lehrer",
+        msg : question
+    });
+
+    renderDialogElementsIn(dialog, dialogBox);
+    messageTextArea.style.display = 'block';
+    messageTextArea.value = '';
+    sendMessageButton.disabled = false;
+});
+
+messageTextArea.addEventListener("keypress", function(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    sendMessageButton.click();
+  }
+});
+
+const askSugestion = document.getElementById("askSugestion");
+
+renderDialogElementsIn(dialog, dialogBox);
+
+</script>
+</body>
+</html>
