@@ -99,7 +99,7 @@ const fetchCompletion = (prompt) => fetch(
             "temperature": 0.9,
             "max_tokens": 256,
             "top_p": 1,
-            "frequency_penalty": 0,
+            "frequency_penalty": 1.0,
             "presence_penalty": 0,
             "stop": ["Schüler:", "Lehrer:" ]
         })
@@ -214,13 +214,7 @@ sendMessageButton.addEventListener("click", async (e) => {
     let question = await fetchNextChatQuestionEntry(
         renderDialog(dialog)
     )
-    const repeated = dialog.filter(d => d.author === "Lehrer").some(d => d.msg.trim().toLocaleLowerCase() == question.trim().toLocaleLowerCase());
-    if(repeated){
-        console.log('Repetida');
-        question = await fetchNextChatQuestionEntryWithoutRepeat(
-            renderDialog(dialog)
-        )
-    }
+    
     dialog.push({
         author: "Lehrer",
         msg : question
